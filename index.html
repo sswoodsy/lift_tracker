@@ -273,7 +273,7 @@ table.data th.rowh,table.data td.rowh{position:sticky;left:0;background:var(--pa
 
   <section class="panel stack" id="setupPanel" aria-labelledby="setupH" hidden>
     <h2 id="setupH">Connect to your Google Sheet</h2>
-    <p class="sub" style="margin:0">Enter the web app address of the Apps Script attached to your Sheet and the passcode you set for it. This is stored on this device only, so do it once on each device. The setup steps are in the README.</p>
+    <p class="sub" style="margin:0">Enter the web app address of the Apps Script attached to your Sheet and the passcode you set for it. This is stored on this device only, so do it once on each device. On a phone, connect in Safari first, then add the page to your Home Screen: the icon keeps the connection. The setup steps are in the README.</p>
     <label class="field"><span class="label">Web app address (ends with /exec)</span><input id="cfgUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec"></label>
     <label class="field"><span class="label">Passcode</span><input id="cfgPass" type="password" autocomplete="current-password"></label>
     <div class="actions"><button class="btn" type="button" id="btnConnect">Connect</button><span class="status" id="setupMsg" aria-live="polite"></span></div>
@@ -613,7 +613,20 @@ function validatePlan(p){
   var sync={chain:Promise.resolve(true),synced:null,retry:null,connected:false,lastAt:""};
   function readJSON(k){try{return JSON.parse(localStorage.getItem(k)||"null")}catch(e){return null}}
   function writeJSON(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}
-  function config(){var c=readJSON(CFG_KEY);return c&&c.url&&c.passcode?c:null}
+  // The connection can also travel in the page address (#connect=…), so a Home Screen icon added from that
+  // address carries it. iOS can clear a Home Screen app's storage between launches; the icon's address stays.
+  // The part after # is never sent to any server. It is encoded only so it is not readable at a glance; it is not encrypted.
+  function encodeConn(c){var t=btoa(unescape(encodeURIComponent(JSON.stringify({url:c.url,passcode:c.passcode}))));return t.replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")}
+  function hashConfig(){
+    var m=/(?:^#|&)connect=([A-Za-z0-9_-]+)/.exec(location.hash);if(!m)return null;
+    try{var c=JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g,"+").replace(/_/g,"/")))));return c&&typeof c.url==="string"&&typeof c.passcode==="string"&&c.url&&c.passcode?c:null}catch(e){return null}
+  }
+  function config(){var c=readJSON(CFG_KEY);if(c&&c.url&&c.passcode)return c;return hashConfig()}
+  // In the phone version, keep the current connection in the address, ready for Add to Home Screen.
+  function putConnInAddress(){
+    var c=config();if(!c||!isPhoneView()||!history.replaceState)return;
+    var h="#connect="+encodeConn(c);if(location.hash!==h)history.replaceState(null,"",location.pathname+location.search+h);
+  }
   function setSave(kind,text){
     $("saveDot").className="dot "+kind;$("saveText").textContent=text;
     $("btnRetry").hidden=kind!=="bad"||!config();
@@ -1660,7 +1673,7 @@ function validatePlan(p){
   }
   /* ---------- connection setup and start ---------- */
   function showSetup(msg){
-    var c=readJSON(CFG_KEY)||{};
+    var c=config()||{};
     $("setupPanel").hidden=false;$("cfgUrl").value=c.url||"";$("cfgPass").value=c.passcode||"";
     $("setupMsg").textContent=msg||"";
   }
@@ -1678,7 +1691,9 @@ function validatePlan(p){
     });
   }
   function start(){
+    if(!readJSON(CFG_KEY)&&hashConfig())writeJSON(CFG_KEY,hashConfig()); // storage was cleared: restore from the address
     load().then(function(res){
+      putConnInAddress();
       $("setupPanel").hidden=true;$("appBody").hidden=false;$("serverBanner").hidden=true;
       migrateLogs();backfillSnapshots();migrateSessionWeights();
       renderAll();applyView();

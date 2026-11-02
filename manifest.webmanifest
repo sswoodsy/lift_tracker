@@ -1,7 +1,6 @@
 {
   "name": "Lifting Progress Tracker",
   "short_name": "Lift Tracker",
-  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#eef0f3",
